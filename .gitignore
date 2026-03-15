@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+maya_rct/maya_rct_settings.json
+maya_rct/maya_rct_palettes.json

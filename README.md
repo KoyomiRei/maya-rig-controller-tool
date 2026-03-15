@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="Maya Rig Controller Tool logo" width="200"/>
+  <img src="assets/logo.png" alt="Maya Rig Controller Tool logo" width="400"/>
 </p>
 
 <h1 align="center">Maya Rig Controller Tool</h1>
@@ -34,11 +34,9 @@
 
 2. Extract the downloaded archive.
 
-3. Drag `install_maya_rct.py` into the Maya viewport.
+3. Drag and Drop`install_maya_rct.py` into the Maya viewport.
 
-4. Confirm the installation.
-
-5. Launch the tool from the Maya shelf.
+4. Launch the tool from the Maya shelf.
 
 ---
 
@@ -54,7 +52,15 @@
 
 ## Screenshots
 
-cooming soon
+### Main Window
+<p align="center">
+  <img src="assets/mainScreen.png" alt="Main Window" width="700">
+</p>
+
+### Controller Variations
+<p align="center">
+  <img src="assets/controllerVariation.png" alt="Сontroller Variation" width="700">
+</p>
 
 ---
 
@@ -79,6 +85,9 @@ The current preinstalled shape set includes:
 - `Soft Cross`
 - `Two Way Arc Arrow`
 
+<p align="center">
+  <img src="assets/standartShapes.png" alt="Standart Shapes" width="700">
+</p>
 
 ---
 ## License

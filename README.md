@@ -1,56 +1,88 @@
-# Maya Rig Controller Tool
+<p align="center">
+  <img src="assets/logo.png" alt="Maya Rig Controller Tool logo" width="200"/>
+</p>
 
-**Maya Rig Controller Tool** (**Maya RCT**) is a controller shape tool for Autodesk Maya.
+<h1 align="center">Maya Rig Controller Tool</h1>
 
-Release: **v_2.3**
+<p align="center">
+  Tool for Autodesk Maya to create, recolor, manage, and save rig controller shapes.
+</p>
+
+<p align="center">
+  <a href="https://github.com/KoyomiRei/maya-rig-controller-tool/releases/latest">
+    <img src="https://img.shields.io/badge/Download-Maya_RCT-f474a7?style=for-the-badge" alt="Download Maya RCT"/>
+  </a>
+</p>
+
+---
 
 ## Features
-- Create and replace controller shapes
-- Built-in shapes and JSON templates
-- Direction and Up Vector controls
-- RGB palettes, custom palette, and recent colors
-- Text controller tools
-- Shape Scale and Line Width controls
-- Promote / demote templates between Custom and Standard
-- In-app Help panel
+
+- Create rig controller shapes directly inside Maya
+- Use built-in and preinstalled controller shapes included in the tool
+- Save and manage custom user shapes
+- Recolor controllers with palettes or custom colors
+- Create text-based controller shapes
+- Adjust shape orientation
+- Control line width and shape scale
+
+---
 
 ## Installation
 
-### Recommended: drag-and-drop installer
-1. Download or clone this repository.
-2. Keep the folder where you want it to live.
-3. Drag **`install_maya_rct.py`** into a Maya viewport or Script Editor.
-4. The installer creates a shelf button named **Maya RCT**.
+1. Download the latest release from the **Releases** page.
 
-> If you move the project folder later, run the installer again so the shelf button can update its path.
+2. Extract the downloaded archive.
 
-### Manual launch
-```python
-import sys
-import importlib
+3. Drag `install_maya_rct.py` into the Maya viewport.
 
-repo_path = r"C:/path/to/maya-rig-controller-tool_v_2.3"
-if repo_path not in sys.path:
-    sys.path.append(repo_path)
+4. Confirm the installation.
 
-from maya_rct import maya_rct
-importlib.reload(maya_rct)
-maya_rct.launch_ui()
-```
+5. Launch the tool from the Maya shelf.
 
-## Shelf icon
-The default shelf icon is:
-`maya_rct/icons/maya_rct.png`
+---
 
-Replace that file if you want to use your own icon.
+## Usage
 
-## Templates
-Custom template JSON files live in:
-`maya_rct/templates`
+- Open **Maya Rig Controller Tool** from the Maya shelf.
+- Use the text controller option to generate text-based shapes if needed.
+- Adjust color, orientation, line width, and shape scale if needed.
+- Choose and create a  shape.
+- Save your own custom shapes for later use.
 
-## Help
-The in-app **Help** button loads text from:
-`maya_rct/help.md`
+---
 
+## Screenshots
+
+cooming soon
+
+---
+
+## Preinstalled Shapes
+
+The current preinstalled shape set includes:
+
+- `Circle`
+- `Square`
+- `Triangle`
+- `Cube`
+- `Sphere`
+- `Pyramid`
+- `Arrow`
+- `Diamond`
+- `Gear`
+- `Corner Brackets`
+- `Cross Arrow 01`
+- `Cross Arrow 02`
+- `Cross Arrow Spherical`
+- `Cylinder`
+- `Soft Cross`
+- `Two Way Arc Arrow`
+
+
+---
 ## License
-MIT
+
+
+
+This project is licensed under the [GPL-3.0 License](https://www.gnu.org/licenses/gpl-3.0.en.html)

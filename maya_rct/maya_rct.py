@@ -2,6 +2,7 @@ import copy
 import json
 import math
 import os
+from contextlib import contextmanager
 
 import maya.cmds as cmds
 import maya.api.OpenMaya as om2
@@ -11,7 +12,7 @@ from PySide2 import QtWidgets, QtCore, QtGui
 
 WINDOW_OBJECT = "MayaRCTUI"
 WINDOW_TITLE = "Maya Rig Controller Tool"
-VERSION = "2.3"
+VERSION = "2.31"
 DEFAULT_TEXT_SCALE = 0.35
 DEFAULT_TEXT_OFFSET = 1.35
 DEFAULT_COLOR_NAME = "Yellow"
@@ -502,6 +503,18 @@ def save_template_data(template_name, data):
     return path
 
 
+@contextmanager
+def undo_chunk(name="Maya RCT"):
+    cmds.undoInfo(openChunk=True, chunkName=name)
+    try:
+        yield
+    finally:
+        try:
+            cmds.undoInfo(closeChunk=True)
+        except Exception:
+            pass
+
+
 def unique_name(name):
     if not cmds.objExists(name):
         return name
@@ -868,7 +881,7 @@ def point_from_canonical(point_data, direction, up_vector):
     return om2.MPoint(world_x, world_y, world_z, w_value)
 
 
-def create_curve_shape_from_data(parent_transform, curve_data, direction, up_vector):
+def create_curve_shape_from_data_api(parent_transform, curve_data, direction, up_vector):
     curve_fn = om2.MFnNurbsCurve()
     points = [point_from_canonical(point, direction, up_vector) for point in (curve_data.get("points") or [])]
     knots = [float(value) for value in (curve_data.get("knots") or [])]
@@ -898,6 +911,57 @@ def create_curve_shape_from_data(parent_transform, curve_data, direction, up_vec
         cmds.parent(shape, parent_transform, relative=True, shape=True)
 
     if cmds.objExists(temp_transform):
+        cmds.delete(temp_transform)
+
+
+def create_curve_shape_from_data(parent_transform, curve_data, direction, up_vector):
+    points = [point_from_canonical(point, direction, up_vector) for point in (curve_data.get("points") or [])]
+    knots = [float(value) for value in (curve_data.get("knots") or [])]
+    degree = int(curve_data.get("degree", 1))
+    form_name = str(curve_data.get("form", "open")).lower()
+
+    if not points or not knots:
+        raise RuntimeError("Template curve data is missing points or knots.")
+
+    curve_points = [(point.x, point.y, point.z) for point in points]
+    temp_transform = None
+    try:
+        curve_kwargs = {
+            "name": unique_name("__tmpTemplateCurve"),
+            "degree": degree,
+            "point": curve_points,
+            "knot": knots,
+        }
+        if form_name == "periodic":
+            curve_kwargs["periodic"] = True
+        temp_transform = cmds.curve(**curve_kwargs)
+
+        if form_name == "closed":
+            try:
+                closed_result = cmds.closeCurve(temp_transform, ch=False, replaceOriginal=True)
+                if isinstance(closed_result, (list, tuple)) and closed_result:
+                    temp_transform = closed_result[0]
+                elif isinstance(closed_result, str):
+                    temp_transform = closed_result
+            except Exception:
+                pass
+
+        temp_shapes = get_shapes(temp_transform)
+        if not temp_shapes:
+            raise RuntimeError("Template curve did not create usable shapes.")
+
+        for shape in temp_shapes:
+            cmds.parent(shape, parent_transform, relative=True, shape=True)
+    except Exception:
+        if temp_transform and cmds.objExists(temp_transform):
+            try:
+                cmds.delete(temp_transform)
+            except Exception:
+                pass
+        create_curve_shape_from_data_api(parent_transform, curve_data, direction, up_vector)
+        return
+
+    if temp_transform and cmds.objExists(temp_transform):
         cmds.delete(temp_transform)
 
 
@@ -1552,9 +1616,19 @@ class ControllerToolUI(QtWidgets.QDialog):
         self.line_width_spin.setValue(DEFAULT_LINE_WIDTH)
         options_layout.addWidget(self.line_width_spin, 2, 3)
 
+        self.apply_shape_scale_button = QtWidgets.QPushButton("Scale Selected Shapes")
+        self.apply_shape_scale_button.setToolTip("Multiplies the current controller shapes by the Shape Scale value.")
+        self.apply_shape_scale_button.clicked.connect(self.apply_shape_scale_to_selected)
+        options_layout.addWidget(self.apply_shape_scale_button, 3, 0, 1, 2)
+
+        self.apply_line_width_button = QtWidgets.QPushButton("Apply Line Width")
+        self.apply_line_width_button.setToolTip("Applies the current Line Width value to selected controllers.")
+        self.apply_line_width_button.clicked.connect(self.apply_line_width_to_selected)
+        options_layout.addWidget(self.apply_line_width_button, 3, 2, 1, 2)
+
         self.reset_button = QtWidgets.QPushButton("Reset UI Settings")
         self.reset_button.clicked.connect(self.reset_defaults)
-        options_layout.addWidget(self.reset_button, 3, 2, 1, 2)
+        options_layout.addWidget(self.reset_button, 4, 2, 1, 2)
 
         main_layout.addWidget(options_group)
 
@@ -1736,7 +1810,7 @@ class ControllerToolUI(QtWidgets.QDialog):
         custom_layout.addWidget(self.custom_shapes_container)
         main_layout.addWidget(custom_group)
 
-        template_helper_group = QtWidgets.QGroupBox("Template Helper")
+        template_helper_group = QtWidgets.QGroupBox("Template Tools")
         template_helper_layout = QtWidgets.QVBoxLayout(template_helper_group)
         template_helper_layout.setContentsMargins(10, 8, 10, 10)
         template_helper_layout.setSpacing(6)
@@ -1744,7 +1818,7 @@ class ControllerToolUI(QtWidgets.QDialog):
         helper_header_layout = QtWidgets.QHBoxLayout()
         self.template_helper_toggle = QtWidgets.QToolButton()
         self.template_helper_toggle.setObjectName("sectionToggle")
-        self.template_helper_toggle.setText("Template Helper")
+        self.template_helper_toggle.setText("Template Tools")
         self.template_helper_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
         self.template_helper_toggle.setArrowType(QtCore.Qt.RightArrow)
         self.template_helper_toggle.setCheckable(True)
@@ -1769,20 +1843,20 @@ class ControllerToolUI(QtWidgets.QDialog):
         self.use_selection_name_button.clicked.connect(self.use_selection_name_for_template)
         template_admin_layout.addWidget(self.use_selection_name_button, 0, 2)
 
-        template_admin_layout.addWidget(QtWidgets.QLabel("Replace Existing"), 1, 0)
+        template_admin_layout.addWidget(QtWidgets.QLabel("Existing Template"), 1, 0)
         self.template_overwrite_combo = QtWidgets.QComboBox()
         template_admin_layout.addWidget(self.template_overwrite_combo, 1, 1, 1, 2)
 
-        self.template_save_button = QtWidgets.QPushButton("Create Template From Selected")
+        self.template_save_button = QtWidgets.QPushButton("Save Template From Selected")
         self.template_save_button.clicked.connect(self.create_template_from_selected)
         template_admin_layout.addWidget(self.template_save_button, 2, 0, 1, 2)
 
-        self.template_overwrite_button = QtWidgets.QPushButton("Replace Selected Template")
+        self.template_overwrite_button = QtWidgets.QPushButton("Update Existing Template")
         self.template_overwrite_button.clicked.connect(self.overwrite_selected_template)
         template_admin_layout.addWidget(self.template_overwrite_button, 2, 2)
 
         template_hint = QtWidgets.QLabel(
-            "Uses the current Direction and Up Vector as the source orientation of the selected curve."
+            "Uses the current Direction and Up Vector as the source orientation of the selected curves."
         )
         template_hint.setWordWrap(True)
         template_hint.setObjectName("helperTextLabel")
@@ -2696,21 +2770,19 @@ class ControllerToolUI(QtWidgets.QDialog):
             cmds.warning("That name is reserved by a built-in shape.")
             return
         if os.path.exists(template_file_path(template_name)):
-            cmds.warning("Template already exists. Use Replace Selected Template to overwrite it.")
+            cmds.warning("Template already exists. Use Update Existing Template to overwrite it.")
             return
 
         try:
-            cmds.undoInfo(openChunk=True)
-            data = collect_template_data_from_selection(template_name, self.current_direction(), self.current_up_vector())
-            save_template_data(template_name, data)
-            self.invalidate_icon_cache(template_name)
-            self.rebuild_custom_shape_buttons()
-            self.template_overwrite_combo.setCurrentText(template_name)
+            with undo_chunk("Maya RCT Save Template"):
+                data = collect_template_data_from_selection(template_name, self.current_direction(), self.current_up_vector())
+                save_template_data(template_name, data)
+                self.invalidate_icon_cache(template_name)
+                self.rebuild_custom_shape_buttons()
+                self.template_overwrite_combo.setCurrentText(template_name)
             cmds.inViewMessage(amg="Template saved: <hl>{0}</hl>".format(template_name), pos="botLeft", fade=True)
         except Exception as exc:
             cmds.warning(str(exc))
-        finally:
-            cmds.undoInfo(closeChunk=True)
 
     def overwrite_selected_template(self):
         template_name = sanitize_template_name(self.template_overwrite_combo.currentText())
@@ -2722,17 +2794,15 @@ class ControllerToolUI(QtWidgets.QDialog):
             return
 
         try:
-            cmds.undoInfo(openChunk=True)
-            data = collect_template_data_from_selection(template_name, self.current_direction(), self.current_up_vector())
-            save_template_data(template_name, data)
-            self.invalidate_icon_cache(template_name)
-            self.rebuild_custom_shape_buttons()
-            self.template_overwrite_combo.setCurrentText(template_name)
+            with undo_chunk("Maya RCT Update Template"):
+                data = collect_template_data_from_selection(template_name, self.current_direction(), self.current_up_vector())
+                save_template_data(template_name, data)
+                self.invalidate_icon_cache(template_name)
+                self.rebuild_custom_shape_buttons()
+                self.template_overwrite_combo.setCurrentText(template_name)
             cmds.inViewMessage(amg="Template replaced: <hl>{0}</hl>".format(template_name), pos="botLeft", fade=True)
         except Exception as exc:
             cmds.warning(str(exc))
-        finally:
-            cmds.undoInfo(closeChunk=True)
 
     def refresh_template_overwrite_combo(self, names=None):
         if names is None:
@@ -3077,17 +3147,39 @@ class ControllerToolUI(QtWidgets.QDialog):
         if targets:
             self.builder.recolor_targets(targets)
 
+    def apply_shape_scale_to_selected(self):
+        targets = [node for node in self.selected_transforms() if curve_components(node)]
+        if not targets:
+            cmds.warning("Select one or more controllers with curve shapes.")
+            return
+
+        multiplier = float(self.shape_scale_spin.value())
+        with undo_chunk("Maya RCT Scale Selected Shapes"):
+            for target in targets:
+                scale_curve_shapes(target, multiplier)
+        cmds.inViewMessage(amg="Scaled selected shapes by <hl>{0:.2f}</hl>.".format(multiplier), pos="botLeft", fade=True)
+
+    def apply_line_width_to_selected(self):
+        targets = [node for node in self.selected_transforms() if get_shapes(node)]
+        if not targets:
+            cmds.warning("Select one or more controllers with curve shapes.")
+            return
+
+        width_value = float(self.line_width_spin.value())
+        with undo_chunk("Maya RCT Apply Line Width"):
+            for target in targets:
+                apply_line_width(target, width_value)
+        cmds.inViewMessage(amg="Applied line width <hl>{0:.2f}</hl> to selected controllers.".format(width_value), pos="botLeft", fade=True)
+
     def handle_shape_click(self, shape_name):
         try:
-            cmds.undoInfo(openChunk=True)
-            if self.change_shape_radio.isChecked():
-                self.replace_selected_shapes(shape_name)
-            else:
-                self.create_from_shape(shape_name)
+            with undo_chunk("Maya RCT Change Shape" if self.change_shape_radio.isChecked() else "Maya RCT Create Controller"):
+                if self.change_shape_radio.isChecked():
+                    self.replace_selected_shapes(shape_name)
+                else:
+                    self.create_from_shape(shape_name)
         except Exception as exc:
             cmds.warning(str(exc))
-        finally:
-            cmds.undoInfo(closeChunk=True)
 
     def create_from_shape(self, shape_name):
         targets = self.selected_transforms()
@@ -3119,27 +3211,25 @@ class ControllerToolUI(QtWidgets.QDialog):
             return
 
         try:
-            cmds.undoInfo(openChunk=True)
-            targets = self.selected_transforms()
-            kwargs = {
-                "text": text_value,
-                "scale": self.text_scale_spin.value(),
-                "offset_y": self.text_offset_spin.value(),
-                "constrain_target": self.constraint_checkbox.isChecked(),
-                "direction": self.current_direction(),
-                "up_vector": self.current_up_vector(),
-                "create_offset_group": self.create_offset_checkbox.isChecked(),
-                "line_width": self.line_width_spin.value(),
-            }
-            if targets:
-                for target in targets:
-                    self.builder.create_text_only(target=target, **kwargs)
-            else:
-                self.builder.create_text_only(**kwargs)
+            with undo_chunk("Maya RCT Create Text Controller"):
+                targets = self.selected_transforms()
+                kwargs = {
+                    "text": text_value,
+                    "scale": self.text_scale_spin.value(),
+                    "offset_y": self.text_offset_spin.value(),
+                    "constrain_target": self.constraint_checkbox.isChecked(),
+                    "direction": self.current_direction(),
+                    "up_vector": self.current_up_vector(),
+                    "create_offset_group": self.create_offset_checkbox.isChecked(),
+                    "line_width": self.line_width_spin.value(),
+                }
+                if targets:
+                    for target in targets:
+                        self.builder.create_text_only(target=target, **kwargs)
+                else:
+                    self.builder.create_text_only(**kwargs)
         except Exception as exc:
             cmds.warning(str(exc))
-        finally:
-            cmds.undoInfo(closeChunk=True)
 
     def replace_selected_shapes(self, shape_name):
         targets = self.selected_transforms()
